@@ -770,6 +770,8 @@ proc handleMessage(b: var TBot, event: TIrcEvent) =
         
       else:
         b.irc.privmsg(event.origin, "No game has been started yet.")
+    of prefix & "lag":
+      b.irc.privmsg(event.origin, "Lag: " & formatFloat(b.irc.getLag))
   else:
     nil
 
