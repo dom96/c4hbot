@@ -303,6 +303,7 @@ proc nextRound(b: var TBot, first, noInc: bool) =
 proc startGame(b: var TBot, event: TIrcEvent, rounds: int) =
   b.game.started = true
   b.game.maxRounds = rounds
+  b.game.round = 0
 
   # Randomize the deck.
   b.game.deck.blackCards = randomizeSeq(b.game.deck.blackCards, false)
