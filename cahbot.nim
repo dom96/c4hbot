@@ -2,7 +2,7 @@ import irc, strutils, parseutils, os, json, httpclient, math
 
 type
   TBot = object
-    irc: TIRC
+    irc: PIRC
     game: TGame
     decks: seq[TDeck]
     
@@ -54,7 +54,7 @@ proc newPlayer(id: TPlayerId): PPlayer =
 
 proc newBot(): TBot =
   # Initialize things
-  result.irc = irc("irc.freenode.net", nick = "c4hbot", joinChans = @["##cardsagainsthumanity"])
+  result.irc = irc("amber.tenthbit.net", nick = "c4hbot", joinChans = @["#cah"])
   result.game = newGame()
 
 proc connect(b: var TBot) =
@@ -849,6 +849,7 @@ when isMainModule:
     var event: TIRCEvent
     if b.irc.poll(event):
       case event.typ:
+      of EvConnected: echo("Connected")
       of EvDisconnected:
         break
       of EvMsg:
