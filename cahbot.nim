@@ -1,50 +1,49 @@
-import irc, strutils, parseutils, os, json, httpclient, math
+import irc, strutils, parseutils, os, json, httpclient, math, random
 
 type
-  TBot = object
-    irc: PIRC
-    game: TGame
-    decks: seq[TDeck]
-    
-  TGame = object
-    players: seq[PPlayer]
+  Bot = object
+    irc: IRC
+    game: Game
+    decks: seq[Deck]
+
+  Game = object
+    players: seq[Player]
     started: bool
-    deck: TDeck
+    deck: Deck
     created: bool
-    keeper: TPlayerId
-    currentCzar: PPlayer
+    keeper: PlayerId
+    currentCzar: Player
     chan: string
     maxRounds: int
     round: int
-  
-  TPlayerId = tuple[nick, user, hostname: string]
-  
-  PPlayer = ref TPlayer
-  TPlayer = object
-    id: TPlayerId
+
+  PlayerId = tuple[nick, user, hostname: string]
+
+  Player = ref object
+    id: PlayerId
     anonId: int
-    white: seq[TWhite]
-    black: seq[TBlack]
+    white: seq[White]
+    black: seq[Black]
     isCzar: bool
-    picks: seq[TWhite]
+    picks: seq[White]
   
-  TDeck = tuple[name: string, blackCards: seq[TBlack], whiteCards: seq[TWhite]]
+  Deck = tuple[name: string, blackCards: seq[Black], whiteCards: seq[White]]
   
-  TBlack = object
+  Black = object
     content: string
     pick: int
     draw: int
   
-  TWhite = string
+  White = string
   
 const prefix = "|"
 
-proc newGame(): TGame =
+proc newGame(): Game =
   result.players = @[]
   result.started = false
   result.created = false
 
-proc newPlayer(id: TPlayerId): PPlayer =
+proc newPlayer(id: PlayerId): Player =
   new(result)
   result.id = id
   result.white = @[]
@@ -52,12 +51,12 @@ proc newPlayer(id: TPlayerId): PPlayer =
   result.picks = @[]
   result.anonId = -1
 
-proc newBot(): TBot =
+proc newBot(): Bot =
   # Initialize things
-  result.irc = irc("amber.tenthbit.net", nick = "c4hbot", joinChans = @["#cah"])
+  result.irc = newIrc("irc.freenode.org", nick = "c4hbot", joinChans = @["#nim-offtopic"])
   result.game = newGame()
 
-proc connect(b: var TBot) =
+proc connect(b: var Bot) =
   b.irc.connect()
 
 proc getArg(msg: string, index: int, m: var string): bool =
@@ -66,14 +65,14 @@ proc getArg(msg: string, index: int, m: var string): bool =
   var i = 0
   var a = ""
   while i < msg.len():
-    i += msg.parseUntil(a, whitespace, i)
-    i += msg.skipWhile(whitespace, i)
+    i += msg.parseUntil(a, Whitespace, i)
+    i += msg.skipWhile(Whitespace, i)
     if index == currentArgIndex:
       m = a
       return true
     inc(currentArgIndex)
 
-proc makeUser(event: TIrcEvent): TPlayerId =
+proc makeUser(event: IrcEvent): PlayerId =
   assert(event.user != "")
   assert(event.nick != "")
   assert(event.host != "")
@@ -85,14 +84,14 @@ proc makePlural(i: int): string =
   else:
     return ""
 
-proc playerExists(game: TGame, id: TPlayerId): bool =
+proc playerExists(game: Game, id: PlayerId): bool =
   ## Checks if ``user`` exists in ``game``.
   for p in game.players.items:
     if p.id == id:
       return true
   return false  
 
-proc `[]`(b: var TBot, id: TPlayerId): PPlayer =
+proc `[]`(b: var Bot, id: PlayerId): Player =
   assert(b.game.created)
   for p in items(b.game.players):
     if p.id == id:
@@ -100,7 +99,7 @@ proc `[]`(b: var TBot, id: TPlayerId): PPlayer =
   
   return nil
 
-proc findId(b: var TBot, id: int): PPlayer =
+proc findId(b: var Bot, id: int): Player =
   for i in items(b.game.players):
     echo(i.id.nick, " ", i.anonId)
     if i.anonId == id:
@@ -108,14 +107,14 @@ proc findId(b: var TBot, id: int): PPlayer =
   
   return nil
 
-proc findNick(b: var TBot, nick: string): PPlayer =
+proc findNick(b: var Bot, nick: string): Player =
   for i in items(b.game.players):
     if i.id.nick == nick:
       return i
   
   return nil
 
-proc delete(b: var TBot, id: TPlayerId) =
+proc delete(b: var Bot, id: PlayerId) =
   for i in 0..len(b.game.players)-1:
     if b.game.players[i].id == id:
       # Copy the white cards to the back of the deck
@@ -123,7 +122,7 @@ proc delete(b: var TBot, id: TPlayerId) =
       b.game.players.del(i)
       break
 
-proc drawWCards(b: var TBot, count: int): seq[TWhite] =
+proc drawWCards(b: var Bot, count: int): seq[White] =
   result = @[]
   echo("Drawing ", count, " cards.")
   if count > 0:
@@ -152,7 +151,7 @@ proc splitForSend(s: string): seq[string] =
   else:
     result.add(s)
 
-proc tellCardsW(b: var TBot, p: PPLayer) =
+proc tellCardsW(b: var Bot, p: PLayer) =
   let currentCard = b.game.deck.blackCards[0]
   var cardsStr = "Here are your white cards: "
   for c in 0..p.white.len()-1:
@@ -176,7 +175,7 @@ proc tellCardsW(b: var TBot, p: PPLayer) =
     else:
       b.irc.notice(p.id.nick, "..." & messages[i] & "...")
 
-proc makeAnswer(question: string, picks: seq[TWhite]): string =
+proc makeAnswer(question: string, picks: seq[White]): string =
   result = ""
   var i = 0
   var pickNr = 0
@@ -193,7 +192,7 @@ proc makeAnswer(question: string, picks: seq[TWhite]): string =
     result.add(" \x02" & picks[pickNr] & "\x02 ")
     inc(pickNr)
 
-proc joinAnd(picks: seq[TWhite]): string =
+proc joinAnd(picks: seq[White]): string =
   result = ""
   for i in 0..len(picks)-1:
     result.add("'" & picks[i] & "'")
@@ -202,7 +201,7 @@ proc joinAnd(picks: seq[TWhite]): string =
     elif i < len(picks)-1:
       result.add(" and ")
 
-proc joinGame(b: var TBot, event: TIrcEvent) =
+proc joinGame(b: var Bot, event: IrcEvent) =
   assert(event.cmd == MPrivMsg)
   
   if b.game.created:
@@ -239,15 +238,15 @@ proc randomizeSeq[T](s: seq[T], noHttp = false): seq[T] =
     for i in splitLines(ints):
       if i != "":
         randomInts.add(i.parseInt())
-  except EHttpRequestErr:
+  except HttpRequestError:
     echo("Falling back to math.random")
     return randomizeSeq(s, true)
     
   for i in items(randomInts):
     result.add(s[i])
 
-proc endGame(b: var TBot)
-proc nextRound(b: var TBot, first, noInc: bool) =
+proc endGame(b: var Bot)
+proc nextRound(b: var Bot, first, noInc: bool) =
   if b.game.round >= b.game.maxRounds:
     b.irc.privmsg(b.game.chan, "Last round reached!")
     b.endGame()
@@ -255,7 +254,7 @@ proc nextRound(b: var TBot, first, noInc: bool) =
   
   b.game.started = true
   
-  var previousCzar: PPlayer
+  var previousCzar: Player
   if not first:
     previousCzar = b.game.currentCzar
     previousCzar.isCzar = false
@@ -300,7 +299,7 @@ proc nextRound(b: var TBot, first, noInc: bool) =
   if not noInc:
     b.game.round.inc()
 
-proc startGame(b: var TBot, event: TIrcEvent, rounds: int) =
+proc startGame(b: var Bot, event: IrcEvent, rounds: int) =
   b.game.started = true
   b.game.maxRounds = rounds
   b.game.round = 0
@@ -322,11 +321,11 @@ proc startGame(b: var TBot, event: TIrcEvent, rounds: int) =
   
   nextRound(b, true, false)
 
-proc endGame(b: var TBot) =
+proc endGame(b: var Bot) =
   # Announce results.
   if b.game.players.len() > 0:
     var players = ""
-    var highestScorers: seq[PPlayer] = @[]
+    var highestScorers: seq[Player] = @[]
     for plr in 0..b.game.players.len()-1:
       var currPlayer = b.game.players[plr]
       
@@ -360,7 +359,7 @@ proc endGame(b: var TBot) =
           [highestScorers[0].id.nick, $highestScorers[0].black.len(), 
            makePlural(highestScorers[0].black.len())])
       else:
-        var m = "$1 players tied with $2 Awesome Point$3: " % 
+        var m = "$1 players tied with $2 Awesome Point$3: " %
             [$highestScorers.len(),
              $highestScorers[0].black.len(),
              makePlural(highestScorers[0].black.len())]
@@ -376,14 +375,14 @@ proc endGame(b: var TBot) =
   b.game = newGame()
   assert(not b.game.created)
 
-proc getPlayersNoPicks(b: var TBot): seq[PPlayer] =
+proc getPlayersNoPicks(b: var Bot): seq[Player] =
   result = @[]
   for p in items(b.game.players):
     if not p.isCzar:
       if p.picks.len() < b.game.deck.blackCards[0].pick:
         result.add(p)
 
-proc checkPlayersReady(b: var TBot) =
+proc checkPlayersReady(b: var Bot) =
   let currentCard = b.game.deck.blackCards[0]
   if getPlayersNoPicks(b).len() == 0:
     b.irc.privmsg(b.game.chan, "All players picked their cards! Answers:")
@@ -409,13 +408,13 @@ proc checkPlayersReady(b: var TBot) =
       else:
         echo("Warning could not find ID: ", i)
 
-proc handleMessage(b: var TBot, event: TIrcEvent) =
+proc handleMessage(b: var Bot, event: IrcEvent) =
   echo(">> ", event.raw)
   case event.cmd
   of MPrivMsg:
     var msg = event.params[event.params.high]
     var cmd = ""
-    discard msg.parseUntil(cmd, whitespace)
+    discard msg.parseUntil(cmd, Whitespace)
     case cmd
     of prefix & "create", prefix & "c":
       if not b.game.created:
@@ -424,7 +423,7 @@ proc handleMessage(b: var TBot, event: TIrcEvent) =
             "Bro, are you on dope? You can't start playin' with yourself.")
         
         var deckStr = "default"
-        var deck: TDeck
+        var deck: Deck
         var changed = getArg(msg, 1, deckStr)
         
         # Get the deck.
@@ -578,7 +577,7 @@ proc handleMessage(b: var TBot, event: TIrcEvent) =
       if b.game.started:
         if b.game.playerExists(event.makeUser):
           var cardId = ""
-          var picks: seq[TWhite] = @[]
+          var picks: seq[White] = @[]
           var player = b[event.makeUser]
           let currentCard = b.game.deck.blackCards[0]
           
@@ -667,7 +666,7 @@ proc handleMessage(b: var TBot, event: TIrcEvent) =
               players.add(", ")
           b.irc.privmsg(event.origin, roundMsg & " Waiting for players: " & players)
         else:
-          var player: PPlayer = nil
+          var player: Player = nil
           for i in b.game.players.items:
             if i.isCzar:
               player = i
@@ -715,7 +714,7 @@ proc handleMessage(b: var TBot, event: TIrcEvent) =
                 [player.id.nick, $player.picks.len(),
                  makePlural(player.picks.len())]
             winResp.add(makeAnswer(b.game.deck.blackCards[0].content, player.picks))
-            winResp.add(". $1 now has $2 Awesome Point$3!" % 
+            winResp.add(". $1 now has $2 Awesome Point$3!" %
               [player.id.nick, $player.black.len(),
                makePlural(player.black.len())])
             # TODO: Add rank.
@@ -787,11 +786,11 @@ proc removeTrailing(s: string, c: char): string =
   for i in countdown(result.len()-1, 0):
     if result[i] == c:
       setLen(result, i)
-    elif result[i] in whitespace:
+    elif result[i] in Whitespace:
       setLen(result, i)
     else: break
 
-proc parseDeck(filename: string): TDeck =
+proc parseDeck(filename: string): Deck =
   var json = parseFile(filename)
   result.blackCards = @[]
   result.whiteCards = @[]
@@ -803,7 +802,7 @@ proc parseDeck(filename: string): TDeck =
     of JString:
       var rCont = b.str
       var underCount = getCharCount(rCont, '_')
-      var card: TBlack
+      var card: Black
       if underCount == 3:
         card.draw = 2
         card.pick = 3
@@ -823,7 +822,7 @@ proc parseDeck(filename: string): TDeck =
   for w in items(white):
     case w.kind
     of JString:
-      var card: TWhite = w.str
+      var card: White = w.str
       result.whiteCards.add(card)
     else: assert(false)
   
@@ -831,7 +830,7 @@ proc parseDeck(filename: string): TDeck =
   
   result.name = filename.splitFile.name
 
-proc getDecks(dir = getApplicationDir() / "decks"): seq[TDeck] =
+proc getDecks(dir = getApplicationDir() / "decks"): seq[Deck] =
   result = @[]
   for kind, path in walkDir(dir):
     if kind == pcFile:
@@ -845,8 +844,8 @@ when isMainModule:
   
   b.connect()
   
-  while True:
-    var event: TIRCEvent
+  while true:
+    var event: IRCEvent
     if b.irc.poll(event):
       case event.typ:
       of EvConnected: echo("Connected")
@@ -854,3 +853,4 @@ when isMainModule:
         break
       of EvMsg:
         b.handleMessage(event)
+      else: discard
