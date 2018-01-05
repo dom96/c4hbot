@@ -128,7 +128,7 @@ proc drawWCards(b: var Bot, count: int): seq[White] =
   if count > 0:
     assert(b.game.started)
     result = b.game.deck.whiteCards[0..count-1]
-    b.game.deck.whiteCards = b.game.deck.whiteCards[count .. -1]
+    b.game.deck.whiteCards = b.game.deck.whiteCards[count .. ^1]
 
 proc splitForSend(s: string): seq[string] =
   ## Splits a string at 450 intervals.
@@ -431,12 +431,12 @@ proc handleMessage(b: var Bot, event: IrcEvent) =
           if d.name == deckStr:
             deck = d
         
-        if changed and deck.name != deckStr: 
+        if changed and deck.name != deckStr:
           b.irc.privmsg(event.origin, 
             "$1: Couldn't find $2 deck." % [event.nick, deckStr])
           return
         elif deck.name != deckStr and not changed: assert(false)
-        
+
         b.game.deck = deck
         b.game.created = true
         b.game.keeper = makeUser(event)
@@ -817,7 +817,7 @@ proc parseDeck(filename: string): Deck =
     else: assert(false)
   
   assert(result.blackCards.len() != 0)
-  
+
   var white = json["white"]
   for w in items(white):
     case w.kind
